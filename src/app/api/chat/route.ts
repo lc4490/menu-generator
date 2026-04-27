@@ -1,11 +1,6 @@
 import OpenAI from "openai";
 import { NextRequest } from "next/server";
 
-const client = new OpenAI({
-  baseURL: "https://api.deepseek.com",
-  apiKey: process.env.DEEPSEEK_API_KEY,
-});
-
 const SYSTEM_PROMPT = `你是一位友善的双语（中英文）晚宴菜单生成助手。
 
 餐厅名称已确定：「Lillian's Bistro」，无需再询问。
@@ -45,6 +40,11 @@ JSON 结构：
 
 export async function POST(req: NextRequest) {
   const { messages } = await req.json();
+
+  const client = new OpenAI({
+    baseURL: "https://api.deepseek.com",
+    apiKey: process.env.DEEPSEEK_API_KEY,
+  });
 
   const stream = await client.chat.completions.create({
     model: "deepseek-v4-flash",
