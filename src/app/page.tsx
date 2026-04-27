@@ -5,8 +5,31 @@ import MenuPreview, { MenuSection, MenuItem } from './components/MenuPreview'
 import styles from './page.module.css'
 
 // ---------------------------------------------------------------------------
-// Markdown parser
+// Markdown parser — flexible, forgiving input
 // ---------------------------------------------------------------------------
+const CJK = /[一-鿿㐀-䶿豈-﫿]/
+
+function splitBilingual(raw: string): { english: string; chinese: string } {
+  // Explicit | separator
+  const pipe = raw.indexOf('|')
+  if (pipe > 0) {
+    const a = raw.slice(0, pipe).trim()
+    const b = raw.slice(pipe + 1).trim()
+    if (CJK.test(b) && !CJK.test(a)) return { english: a, chinese: b }
+    if (CJK.test(a) && !CJK.test(b)) return { english: b, chinese: a }
+    return { english: a, chinese: b }
+  }
+  // Auto-detect Latin/CJK boundary (e.g. "Beef Stew燉牛肉")
+  const cjkStart = raw.search(CJK)
+  if (cjkStart < 0) return { english: raw, chinese: '' }
+  if (cjkStart === 0) {
+    const latinStart = raw.search(/[A-Za-z]/)
+    if (latinStart > 0) return { english: raw.slice(latinStart).trim(), chinese: raw.slice(0, latinStart).trim() }
+    return { english: '', chinese: raw }
+  }
+  return { english: raw.slice(0, cjkStart).trim(), chinese: raw.slice(cjkStart).trim() }
+}
+
 function parseMarkdown(text: string): MenuSection[] {
   const sections: MenuSection[] = []
   let current: MenuSection | null = null
@@ -15,29 +38,34 @@ function parseMarkdown(text: string): MenuSection[] {
     const line = raw.trim()
     if (!line) continue
 
-    if (line.startsWith('####')) {
+    // Section header: ### or #### (or more hashes)
+    if (/^#{3,}/.test(line)) {
       const content = line.replace(/^#+\s*/, '').replace(/\*+/g, '').trim()
-      const [eng, chn] = content.split('|').map(s => s.trim())
-      current = { english: eng || content, chinese: chn || '', items: [] }
+      const { english, chinese } = splitBilingual(content)
+      current = { english: english || content, chinese, items: [] }
       sections.push(current)
       continue
     }
 
-    if (/^#{1,3}[^#]/.test(line)) continue
+    // Skip # and ## (top-level title lines)
+    if (line.startsWith('#')) continue
     if (!current) continue
 
-    const isNote = line.startsWith('_')
-    if (!line.startsWith('*') && !isNote) continue
+    // Note: _..._ wrapped or starts with em-dash
+    const isNote = line.startsWith('_') || /^—/.test(line)
 
-    const content = line.replace(/^[*_]+/, '').replace(/[*_]+$/, '').trim()
-    const parts = content.split('|').map(s => s.trim())
+    // Strip any markdown decoration: *, _, -, • from start/end
+    const content = line
+      .replace(/^\*+\s?/, '').replace(/\*+$/, '')
+      .replace(/^_+\s?/, '').replace(/_+$/, '')
+      .replace(/^[-•]\s+/, '')
+      .trim()
 
-    const item: MenuItem =
-      parts.length >= 2
-        ? { english: parts[0], chinese: parts[1], isNote }
-        : { english: parts[0], chinese: '', isNote }
+    if (!content) continue
 
-    if (item.english) current.items.push(item)
+    const { english, chinese } = splitBilingual(content)
+    const eng = english || chinese
+    if (eng) current.items.push({ english: eng, chinese: english ? chinese : '', isNote })
   }
 
   return sections
@@ -46,26 +74,23 @@ function parseMarkdown(text: string): MenuSection[] {
 // ---------------------------------------------------------------------------
 // Sample data
 // ---------------------------------------------------------------------------
-const DEFAULT_MD = `### *Dinner Menu 晚宴菜單*
-*April 28, 2026 | 2026年4月28日*
+const DEFAULT_MD = `#### APPETIZERS | 開胃小菜
+Japanese-style Marinated Cherry Tomatoes | 日式小蕃茄
+Sweet and Sour Pickled Daikon | 糖醋白蘿蔔
+Taiwanese-style Pickled Cucumbers | 台式醃小黃瓜
 
-#### *APPETIZERS | 開胃小菜*
-*Japanese-style Marinated Cherry Tomatoes | 日式小蕃茄*
-*Sweet and Sour Pickled Daikon | 糖醋白蘿蔔*
-*Taiwanese-style Pickled Cucumbers | 台式醃小黃瓜*
-
-#### *SASHIMI | 生魚片*
-*Premium Toro Sashimi Platter | 高檔拖羅生魚片拼盤*
+#### SASHIMI | 生魚片
+Premium Toro Sashimi Platter | 高檔拖羅生魚片拼盤
 _— Courtesy of Samuel & Lily | 由 Samuel & Lily 提供 —_
 
-#### *HOT DISHES | 熱菜*
-*Beef-wrapped Enoki Mushrooms | 牛肉包金針菇*
-*Stir-fried Chives with Bean Sprouts | 韭菜炒銀芽*
-*Slow-braised Beef Stew | 燉牛肉*
-*Taiwanese Braised Pork Belly | 台式控肉*
+#### HOT DISHES | 熱菜
+Beef-wrapped Enoki Mushrooms | 牛肉包金針菇
+Stir-fried Chives with Bean Sprouts | 韭菜炒銀芽
+Slow-braised Beef Stew | 燉牛肉
+Taiwanese Braised Pork Belly | 台式控肉
 
-#### *SOUP | 湯品*
-*Pork Rib Soup with Radish and Corn | 蘿蔔排骨玉米湯*`
+#### SOUP | 湯品
+Pork Rib Soup with Radish and Corn | 蘿蔔排骨玉米湯`
 
 // ---------------------------------------------------------------------------
 // Shared style helpers
@@ -106,11 +131,26 @@ export default function Home() {
   // previewZoom: how much to visually shrink the 750px card to fit the screen.
   // The hidden ref element is always full-size; only the visible clone is zoomed.
   const [previewZoom, setPreviewZoom] = useState(1)
+  // Pre-encoded data URL for the corner image — avoids html-to-image's fetch step
+  const [cornerSrc, setCornerSrc] = useState('/image.png')
 
   // Ref for the hidden full-size element used for PNG capture
   const downloadRef = useRef<HTMLDivElement>(null)
 
   const sections = parseMarkdown(markdown)
+
+  // Convert corner image to data URL once so html-to-image never has to fetch it
+  useEffect(() => {
+    const img = new Image()
+    img.onload = () => {
+      const canvas = document.createElement('canvas')
+      canvas.width = img.naturalWidth
+      canvas.height = img.naturalHeight
+      canvas.getContext('2d')!.drawImage(img, 0, 0)
+      setCornerSrc(canvas.toDataURL('image/png'))
+    }
+    img.src = '/image.png'
+  }, [])
 
   // Compute zoom so the preview fits the available width
   useEffect(() => {
@@ -133,6 +173,14 @@ export default function Home() {
     setBusy(true)
     try {
       await document.fonts.ready
+      // Wait for all images (corner ornaments) to finish loading
+      await Promise.all(
+        Array.from(downloadRef.current.querySelectorAll('img')).map(img =>
+          img.complete
+            ? Promise.resolve()
+            : new Promise<void>(res => { img.onload = () => res(); img.onerror = () => res() })
+        )
+      )
       const dataUrl = await toPng(downloadRef.current, {
         pixelRatio: 2,
         backgroundColor: 'white',
@@ -191,18 +239,19 @@ export default function Home() {
 
   return (
     <div className={styles.layout}>
-      {/* Hidden full-size card used exclusively for PNG capture */}
+      {/* Hidden full-size card used exclusively for PNG capture.
+          Must NOT use visibility:hidden — it's inherited and makes html-to-image
+          capture a blank white box. Off-screen position is sufficient. */}
       <div
         style={{
           position: 'fixed',
           left: '-9999px',
           top: 0,
-          visibility: 'hidden',
           pointerEvents: 'none',
         }}
         aria-hidden="true"
       >
-        <MenuPreview ref={downloadRef} {...menuProps} />
+        <MenuPreview ref={downloadRef} {...menuProps} cornerSrc={cornerSrc} />
       </div>
 
       {/* ── Mobile tab bar ── */}
@@ -226,19 +275,16 @@ export default function Home() {
         className={`${styles.formPanel} ${tab !== 'edit' ? styles.mobileHidden : ''}`}
       >
         <h1 style={{ fontSize: '20px', fontWeight: 700, color: '#111', margin: '0 0 4px' }}>
-          Menu Card Generator
+          菜單生成器 Menu Generator
         </h1>
-        <p style={{ fontSize: '13px', color: '#888', margin: '0 0 4px' }}>
-          Fill in the fields — the preview updates live.
-        </p>
-        <p style={{ fontSize: '12px', color: '#bbb', margin: '0 0 4px' }}>
-          <code>*English | 中文*</code> for items
+        <p style={{ fontSize: '13px', color: '#888', margin: '0 0 8px' }}>
+          填寫欄位，預覽即時更新。Fill in the fields — preview updates live.
         </p>
         <p style={{ fontSize: '12px', color: '#bbb', margin: '0 0 12px' }}>
-          <code>#### *SECTION | 中文*</code> for sections · <code>_note_</code> for italics
+          <code>#### SECTION | 中文</code> for sections &nbsp;·&nbsp; <code>English | 中文</code> for items &nbsp;·&nbsp; <code>_note_</code> for italics
         </p>
 
-        <label style={labelStyle}>Restaurant Name</label>
+        <label style={labelStyle}>餐廳名稱 &nbsp;Restaurant Name</label>
         <input
           style={inputStyle}
           value={restaurantName}
@@ -246,7 +292,7 @@ export default function Home() {
           placeholder="e.g. Lillian's Bistro"
         />
 
-        <label style={labelStyle}>Date &amp; Time</label>
+        <label style={labelStyle}>日期時間 &nbsp;Date &amp; Time</label>
         <input
           style={inputStyle}
           value={dateTime}
@@ -254,7 +300,7 @@ export default function Home() {
           placeholder="e.g. 28/4/2026 6:00pm"
         />
 
-        <label style={labelStyle}>Host Names</label>
+        <label style={labelStyle}>主人名稱 &nbsp;Host Names</label>
         <input
           style={inputStyle}
           value={hosts}
@@ -262,7 +308,7 @@ export default function Home() {
           placeholder="e.g. Lilly和Samuel"
         />
 
-        <label style={labelStyle}>Menu (Markdown)</label>
+        <label style={labelStyle}>菜單內容 &nbsp;Menu</label>
         <textarea
           style={{
             ...inputStyle,

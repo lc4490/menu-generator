@@ -18,6 +18,7 @@ export interface MenuData {
   dateTime: string
   hosts: string
   sections: MenuSection[]
+  cornerSrc?: string  // data URL for the capture element; falls back to /image.png
 }
 
 const PINK = '#FF4DB3'
@@ -29,9 +30,10 @@ const PINK = '#FF4DB3'
 // 130px container. CSS frame lines are positioned to continue from those
 // exact coordinates.
 // ---------------------------------------------------------------------------
-function CornerOrnament({ flipX, flipY }: { flipX?: boolean; flipY?: boolean }) {
+function CornerOrnament({
+  flipX, flipY, src,
+}: { flipX?: boolean; flipY?: boolean; src: string }) {
   const tf = [flipX && 'scaleX(-1)', flipY && 'scaleY(-1)'].filter(Boolean).join(' ')
-  // Show 300×300 source pixels → 130×130 container (scale = 130/300)
   const scale = 130 / 300
 
   return (
@@ -46,7 +48,7 @@ function CornerOrnament({ flipX, flipY }: { flipX?: boolean; flipY?: boolean }) 
       }}
     >
       <img
-        src="/image.png"
+        src={src}
         alt=""
         style={{
           display: 'block',
@@ -68,7 +70,7 @@ const FRAME_S = 59   // left/right frame line offset from card edge
 // MenuPreview
 // ---------------------------------------------------------------------------
 const MenuPreview = forwardRef<HTMLDivElement, MenuData>(
-  ({ restaurantName, dateTime, hosts, sections }, ref) => (
+  ({ restaurantName, dateTime, hosts, sections, cornerSrc = '/image.png' }, ref) => (
     <div
       ref={ref}
       style={{
@@ -88,10 +90,10 @@ const MenuPreview = forwardRef<HTMLDivElement, MenuData>(
       <div style={{ position: 'absolute', right: FRAME_S, top: 130, bottom: 130, width: 2, background: PINK }} />
 
       {/* Corner ornaments — image-based, mirrored for each corner */}
-      <div style={{ position: 'absolute', top: 0, left: 0 }}><CornerOrnament /></div>
-      <div style={{ position: 'absolute', top: 0, right: 0 }}><CornerOrnament flipX /></div>
-      <div style={{ position: 'absolute', bottom: 0, left: 0 }}><CornerOrnament flipY /></div>
-      <div style={{ position: 'absolute', bottom: 0, right: 0 }}><CornerOrnament flipX flipY /></div>
+      <div style={{ position: 'absolute', top: 0, left: 0 }}><CornerOrnament src={cornerSrc} /></div>
+      <div style={{ position: 'absolute', top: 0, right: 0 }}><CornerOrnament src={cornerSrc} flipX /></div>
+      <div style={{ position: 'absolute', bottom: 0, left: 0 }}><CornerOrnament src={cornerSrc} flipY /></div>
+      <div style={{ position: 'absolute', bottom: 0, right: 0 }}><CornerOrnament src={cornerSrc} flipX flipY /></div>
 
       {/* Page content */}
       <div style={{ padding: '88px 106px 68px', textAlign: 'center' }}>
