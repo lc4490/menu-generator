@@ -14,9 +14,9 @@
   flex-shrink: 0;
   background: white;
   border-radius: 14px;
-  padding: 22px 20px 28px;
+  padding: 20px 18px 18px;
   box-shadow: 0 2px 16px rgba(0, 0, 0, 0.07);
-  overflow-y: auto;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
@@ -65,6 +65,11 @@
   /* on desktop: always visible */
 }
 
+/* Full-width download button shown only on mobile */
+.mobileDownload {
+  display: none;
+}
+
 /* ─── Mobile ─── */
 @media (max-width: 767px) {
   .mobileHidden {
@@ -90,7 +95,11 @@
     width: 100%;
     border-radius: 0;
     box-shadow: none;
-    padding: 20px 16px 32px;
+    padding: 16px 14px 14px;
+  }
+
+  .mobileDownload {
+    display: block;
   }
 
   .previewPanel {
