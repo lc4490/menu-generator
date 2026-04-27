@@ -70,6 +70,19 @@
   display: none;
 }
 
+.spinner {
+  width: 20px;
+  height: 20px;
+  border: 2.5px solid #e8e8e8;
+  border-top-color: #FF4DB3;
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 /* ─── Mobile ─── */
 @media (max-width: 767px) {
   .mobileHidden {

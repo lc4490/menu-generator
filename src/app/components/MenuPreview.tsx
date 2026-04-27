@@ -13,50 +13,32 @@ export interface MenuSection {
   items: MenuItem[]
 }
 
+export interface CornerImages {
+  tl: string   // top-left  — 130×130 data URL, already cropped & flipped
+  tr: string   // top-right
+  bl: string   // bottom-left
+  br: string   // bottom-right
+}
+
 export interface MenuData {
   restaurantName: string
   dateTime: string
   hosts: string
   sections: MenuSection[]
-  cornerSrc?: string  // data URL for the capture element; falls back to /image.png
+  corners?: CornerImages
 }
 
 const PINK = '#FF4DB3'
 
-// ---------------------------------------------------------------------------
-// Corner ornament — crops the top-left 300×300px of /image.png and scales
-// it to 130×130. The source image (1545×2000) has its border lines at
-// x≈137px (left) and y≈69px (top), which map to x≈59 / y≈30 in the
-// 130px container. CSS frame lines are positioned to continue from those
-// exact coordinates.
-// ---------------------------------------------------------------------------
-function CornerOrnament({
-  flipX, flipY, src,
-}: { flipX?: boolean; flipY?: boolean; src: string }) {
-  const tf = [flipX && 'scaleX(-1)', flipY && 'scaleY(-1)'].filter(Boolean).join(' ')
-  const scale = 130 / 300
-
+// Each corner is a pre-rendered 130×130 data URL with the correct crop and
+// flip already baked in by canvas — no CSS transforms or overflow:hidden needed.
+function CornerOrnament({ src }: { src: string }) {
   return (
-    <div
-      style={{
-        width: 130,
-        height: 130,
-        overflow: 'hidden',
-        lineHeight: 0,
-        flexShrink: 0,
-        transform: tf || undefined,
-      }}
-    >
-      <img
-        src={src}
-        alt=""
-        style={{
-          display: 'block',
-          width:  Math.round(1545 * scale),
-          height: Math.round(2000 * scale),
-        }}
-      />
-    </div>
+    <img
+      src={src}
+      alt=""
+      style={{ display: 'block', width: 130, height: 130, lineHeight: 0, flexShrink: 0 }}
+    />
   )
 }
 
@@ -70,7 +52,7 @@ const FRAME_S = 59   // left/right frame line offset from card edge
 // MenuPreview
 // ---------------------------------------------------------------------------
 const MenuPreview = forwardRef<HTMLDivElement, MenuData>(
-  ({ restaurantName, dateTime, hosts, sections, cornerSrc = '/image.png' }, ref) => (
+  ({ restaurantName, dateTime, hosts, sections, corners }, ref) => (
     <div
       ref={ref}
       style={{
@@ -89,11 +71,13 @@ const MenuPreview = forwardRef<HTMLDivElement, MenuData>(
       <div style={{ position: 'absolute', left: FRAME_S, top: 130, bottom: 130, width: 2, background: PINK }} />
       <div style={{ position: 'absolute', right: FRAME_S, top: 130, bottom: 130, width: 2, background: PINK }} />
 
-      {/* Corner ornaments — image-based, mirrored for each corner */}
-      <div style={{ position: 'absolute', top: 0, left: 0 }}><CornerOrnament src={cornerSrc} /></div>
-      <div style={{ position: 'absolute', top: 0, right: 0 }}><CornerOrnament src={cornerSrc} flipX /></div>
-      <div style={{ position: 'absolute', bottom: 0, left: 0 }}><CornerOrnament src={cornerSrc} flipY /></div>
-      <div style={{ position: 'absolute', bottom: 0, right: 0 }}><CornerOrnament src={cornerSrc} flipX flipY /></div>
+      {/* Corner ornaments — pre-rendered 130×130 data URLs, no transforms needed */}
+      {corners && <>
+        <div style={{ position: 'absolute', top: 0, left: 0 }}><CornerOrnament src={corners.tl} /></div>
+        <div style={{ position: 'absolute', top: 0, right: 0 }}><CornerOrnament src={corners.tr} /></div>
+        <div style={{ position: 'absolute', bottom: 0, left: 0 }}><CornerOrnament src={corners.bl} /></div>
+        <div style={{ position: 'absolute', bottom: 0, right: 0 }}><CornerOrnament src={corners.br} /></div>
+      </>}
 
       {/* Page content */}
       <div style={{ padding: '88px 106px 68px', textAlign: 'center' }}>

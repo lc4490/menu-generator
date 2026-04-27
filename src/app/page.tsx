@@ -1,7 +1,7 @@
 'use client'
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { toPng } from 'html-to-image'
-import MenuPreview, { MenuData } from './components/MenuPreview'
+import MenuPreview, { MenuData, CornerImages } from './components/MenuPreview'
 import styles from './page.module.css'
 
 // ---------------------------------------------------------------------------
@@ -46,21 +46,37 @@ export default function Home() {
   const [tab, setTab]             = useState<'chat' | 'preview'>('chat')
   const [previewZoom, setPreviewZoom] = useState(1)
   const [menuData, setMenuData]   = useState<MenuData>(EMPTY_MENU)
-  const [cornerSrc, setCornerSrc] = useState('/image.png')
+  const [corners, setCorners] = useState<CornerImages | undefined>(undefined)
 
   const downloadRef = useRef<HTMLDivElement>(null)
   const chatEndRef  = useRef<HTMLDivElement>(null)
   const inputRef    = useRef<HTMLInputElement>(null)
 
-  // Pre-encode corner image so html-to-image never has to fetch it
+  // Pre-render each corner as a 130×130 canvas crop with the flip baked in.
+  // This avoids large data URLs and removes any CSS transform / overflow:hidden
+  // that html-to-image struggles with on mobile.
   useEffect(() => {
     const img = new Image()
     img.onload = () => {
-      const canvas = document.createElement('canvas')
-      canvas.width  = img.naturalWidth
-      canvas.height = img.naturalHeight
-      canvas.getContext('2d')!.drawImage(img, 0, 0)
-      setCornerSrc(canvas.toDataURL('image/png'))
+      const CROP = 300, OUT = 130
+
+      function makeCorner(flipX: boolean, flipY: boolean): string {
+        const c = document.createElement('canvas')
+        c.width = OUT; c.height = OUT
+        const ctx = c.getContext('2d')!
+        if (flipX && flipY) { ctx.translate(OUT, OUT); ctx.scale(-1, -1) }
+        else if (flipX)     { ctx.translate(OUT, 0);   ctx.scale(-1,  1) }
+        else if (flipY)     { ctx.translate(0,   OUT); ctx.scale( 1, -1) }
+        ctx.drawImage(img, 0, 0, CROP, CROP, 0, 0, OUT, OUT)
+        return c.toDataURL('image/png')
+      }
+
+      setCorners({
+        tl: makeCorner(false, false),
+        tr: makeCorner(true,  false),
+        bl: makeCorner(false, true),
+        br: makeCorner(true,  true),
+      })
     }
     img.src = '/image.png'
   }, [])
@@ -89,7 +105,6 @@ export default function Home() {
     setBusy(true)
 
     try {
-      // Build API messages — skip the hardcoded greeting (index 0), ensure user/assistant alternation
       const apiMessages = updated.slice(1).map(m => ({ role: m.role, content: m.content }))
 
       const res = await fetch('/api/chat', {
@@ -97,27 +112,14 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: apiMessages }),
       })
-      if (!res.body) throw new Error('No response body')
+      const { text } = await res.json()
 
-      const reader  = res.body.getReader()
-      const decoder = new TextDecoder()
-      let full = ''
+      const state = extractMenuState(text)
+      if (state) setMenuData(state)
 
-      setMessages(prev => [...prev, { role: 'assistant', content: '' }])
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        full += decoder.decode(value, { stream: true })
-
-        const state = extractMenuState(full)
-        if (state) setMenuData(state)
-
-        setMessages(prev => [...prev.slice(0, -1), { role: 'assistant', content: full }])
-      }
+      setMessages(prev => [...prev, { role: 'assistant', content: text }])
     } catch (err) {
       console.error('Chat error:', err)
-      setMessages(prev => prev.at(-1)?.content === '' ? prev.slice(0, -1) : prev)
     } finally {
       setBusy(false)
       inputRef.current?.focus()
@@ -137,13 +139,6 @@ export default function Home() {
     setDownloading(true)
     try {
       await document.fonts.ready
-      await Promise.all(
-        Array.from(downloadRef.current.querySelectorAll('img')).map(img =>
-          img.complete
-            ? Promise.resolve()
-            : new Promise<void>(res => { img.onload = () => res(); img.onerror = () => res() })
-        )
-      )
       const dataUrl = await toPng(downloadRef.current, { pixelRatio: 2, backgroundColor: 'white' })
       const filename = `${(menuData.restaurantName || 'menu').replace(/\s+/g, '-').toLowerCase()}.png`
       const blob = await (await fetch(dataUrl)).blob()
@@ -164,7 +159,7 @@ export default function Home() {
   }, [menuData.restaurantName])
 
   // ---------------------------------------------------------------------------
-  const menuProps = { ...menuData, cornerSrc }
+  const menuProps = { ...menuData, corners }
 
   const downloadBtn = (full: boolean) => (
     <button
@@ -207,9 +202,6 @@ export default function Home() {
         <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', paddingBottom: '8px' }}>
           {messages.map((msg, i) => {
             const text = msg.role === 'assistant' ? stripMenuState(msg.content) : msg.content
-            if (!text && msg.role === 'assistant') return (
-              <div key={i} style={{ alignSelf: 'flex-start', fontSize: '20px', color: '#ccc', padding: '4px 8px' }}>•••</div>
-            )
             if (!text) return null
             const isUser = msg.role === 'user'
             return (
@@ -228,6 +220,11 @@ export default function Home() {
               </div>
             )
           })}
+          {busy && (
+            <div style={{ alignSelf: 'flex-start', padding: '10px 14px' }}>
+              <div className={styles.spinner} />
+            </div>
+          )}
           <div ref={chatEndRef} />
         </div>
 
